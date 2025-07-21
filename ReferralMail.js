@@ -204,10 +204,10 @@ function buildEmailContent(employeeData, CONFIG, today) {
   // Badge styles
   const getBadgeStyle = (type) => {
     switch(type) {
-      case 'expired': return 'background: linear-gradient(135deg, #ef4444, #dc2626); color: white;';
-      case 'expiring_soon': return 'background: linear-gradient(135deg, #f59e0b, #d97706); color: white;';
-      case 'active': return 'background: linear-gradient(135deg, #22c55e, #16a34a); color: white;';
-      default: return 'background: linear-gradient(135deg, #6b7280, #4b5563); color: white;';
+      case 'expired': return 'background: #fef2f2; color: #dc2626; border: 1px solid #fecaca;';
+      case 'expiring_soon': return 'background: #fffbeb; color: #d97706; border: 1px solid #fed7aa;';
+      case 'active': return 'background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0;';
+      default: return 'background: #f9fafb; color: #4b5563; border: 1px solid #e5e7eb;';
     }
   };
   
