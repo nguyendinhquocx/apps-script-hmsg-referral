@@ -92,20 +92,22 @@ function sendWeeklyReferralReport() {
         
         if (!tenNhanVien || !tenDoiTac) return;
         
-        // Xác định trạng thái hợp đồng
-        let contractStatus = 'active';
+        // Chỉ xử lý hợp đồng đã hết hạn hoặc sắp hết hạn
+        let contractStatus = null;
         if (soNgayDenHan < 0 || trangThaiHd === 'Đã hết hạn') {
           contractStatus = 'expired';
         } else if (soNgayDenHan <= CONFIG.expiringSoonDays) {
           contractStatus = 'expiring_soon';
         }
         
+        // Bỏ qua hợp đồng còn hiệu lực
+        if (!contractStatus) return;
+        
         // Khởi tạo dữ liệu nhân viên nếu chưa có
         if (!employeeData[tenNhanVien]) {
           employeeData[tenNhanVien] = {
             expired: [],
-            expiring_soon: [],
-            active: []
+            expiring_soon: []
           };
         }
         
@@ -129,11 +131,20 @@ function sendWeeklyReferralReport() {
       }
     });
 
+    // Sắp xếp đối tác theo số ngày hết hạn (từ hết hạn nhiều nhất đến ngắn nhất)
+    Object.keys(employeeData).forEach(empName => {
+      const empData = employeeData[empName];
+      // Sắp xếp expired: số âm lớn nhất trước (hết hạn lâu nhất)
+      empData.expired.sort((a, b) => a.soNgayDenHan - b.soNgayDenHan);
+      // Sắp xếp expiring_soon: số nhỏ nhất trước (sắp hết hạn nhất)
+      empData.expiring_soon.sort((a, b) => a.soNgayDenHan - b.soNgayDenHan);
+    });
+    
     if (CONFIG.debugMode) {
       Logger.log(`👥 Số nhân viên: ${Object.keys(employeeData).length}`);
       Object.keys(employeeData).forEach(emp => {
         const data = employeeData[emp];
-        Logger.log(`${emp}: Hết hạn(${data.expired.length}), Sắp hết hạn(${data.expiring_soon.length}), Còn hiệu lực(${data.active.length})`);
+        Logger.log(`${emp}: Hết hạn(${data.expired.length}), Sắp hết hạn(${data.expiring_soon.length})`);
       });
     }
 
@@ -141,7 +152,7 @@ function sendWeeklyReferralReport() {
     const emailContent = buildEmailContent(employeeData, CONFIG, today);
     
     // Gửi email
-    const subject = `HMSG | P.KD - BÁO CÁO ĐỐI TÁC TUẦN ${Utilities.formatDate(today, ss.getSpreadsheetTimeZone(), 'dd/MM/yyyy')}`;
+    const subject = `HMSG | P.KD - BÁO CÁO THỐNG KÊ HỢP ĐỒNG ĐỐI TÁC REFERRAL TÁC TUẦN ${Utilities.formatDate(today, ss.getSpreadsheetTimeZone(), 'dd/MM/yyyy')}`;
     
     sendEmailWithRetry({
       to: CONFIG.emailTo,
@@ -166,14 +177,13 @@ function buildEmailContent(employeeData, CONFIG, today) {
   const detailedDate = `${dayOfWeek}, ngày ${today.getDate()} tháng ${today.getMonth() + 1} năm ${today.getFullYear()}`;
   
   // Tính tổng số đối tác theo trạng thái
-  let totalExpired = 0, totalExpiringSoon = 0, totalActive = 0;
+  let totalExpired = 0, totalExpiringSoon = 0;
   Object.values(employeeData).forEach(emp => {
     totalExpired += emp.expired.length;
     totalExpiringSoon += emp.expiring_soon.length;
-    totalActive += emp.active.length;
   });
   
-  const totalPartners = totalExpired + totalExpiringSoon + totalActive;
+  const totalPartners = totalExpired + totalExpiringSoon;
   
   // Color scheme
   const colors = {
@@ -204,8 +214,7 @@ function buildEmailContent(employeeData, CONFIG, today) {
   // Xây dựng summary dashboard
   const summaryDashboard = `
     <div style="margin-bottom: 32px; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px;">
-      <h2 style="margin: 0 0 20px; font-size: 18px; font-weight: 500; color: ${colors.sectionTitle}; display: flex; align-items: center;">
-        <img src="${CONFIG.partnerIcon}" width="20" height="20" style="margin-right: 12px;" alt="Partners">
+      <h2 style="margin: 0 0 20px; font-size: 18px; font-weight: 500; color: ${colors.sectionTitle};">
         Tổng quan đối tác
       </h2>
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px;">
@@ -216,10 +225,6 @@ function buildEmailContent(employeeData, CONFIG, today) {
         <div style="text-align: center; padding: 16px; background: white; border-radius: 8px; border: 1px solid #e2e8f0;">
           <div style="font-size: 24px; font-weight: 600; color: ${colors.expiringSoonTitle}; margin-bottom: 4px;">${totalExpiringSoon}</div>
           <div style="font-size: 12px; color: ${colors.expiringSoonTitle}; font-weight: 500;">Sắp hết hạn</div>
-        </div>
-        <div style="text-align: center; padding: 16px; background: white; border-radius: 8px; border: 1px solid #e2e8f0;">
-          <div style="font-size: 24px; font-weight: 600; color: ${colors.activeTitle}; margin-bottom: 4px;">${totalActive}</div>
-          <div style="font-size: 12px; color: ${colors.activeTitle}; font-weight: 500;">Còn hiệu lực</div>
         </div>
         <div style="text-align: center; padding: 16px; background: white; border-radius: 8px; border: 1px solid #e2e8f0;">
           <div style="font-size: 24px; font-weight: 600; color: ${colors.sectionTitle}; margin-bottom: 4px;">${totalPartners}</div>
@@ -235,7 +240,7 @@ function buildEmailContent(employeeData, CONFIG, today) {
   
   sortedEmployees.forEach(employeeName => {
     const empData = employeeData[employeeName];
-    const empTotal = empData.expired.length + empData.expiring_soon.length + empData.active.length;
+    const empTotal = empData.expired.length + empData.expiring_soon.length;
     
     if (empTotal === 0) return; // Bỏ qua nhân viên không có đối tác
     
@@ -246,7 +251,6 @@ function buildEmailContent(employeeData, CONFIG, today) {
           <div style="margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap;">
             ${empData.expired.length > 0 ? `<span style="${getBadgeStyle('expired')} padding: 4px 8px; border-radius: 8px; font-size: 11px; font-weight: 500;">Hết hạn: ${empData.expired.length}</span>` : ''}
             ${empData.expiring_soon.length > 0 ? `<span style="${getBadgeStyle('expiring_soon')} padding: 4px 8px; border-radius: 8px; font-size: 11px; font-weight: 500;">Sắp hết hạn: ${empData.expiring_soon.length}</span>` : ''}
-            ${empData.active.length > 0 ? `<span style="${getBadgeStyle('active')} padding: 4px 8px; border-radius: 8px; font-size: 11px; font-weight: 500;">Còn hiệu lực: ${empData.active.length}</span>` : ''}
           </div>
         </div>
     `;
@@ -259,11 +263,6 @@ function buildEmailContent(employeeData, CONFIG, today) {
     // Sắp hết hạn
     if (empData.expiring_soon.length > 0) {
       employeeSections += buildPartnerSection('Sắp hết hạn', empData.expiring_soon, CONFIG.expiringSoonIcon, colors.expiringSoonTitle, 'expiring_soon');
-    }
-    
-    // Còn hiệu lực
-    if (empData.active.length > 0) {
-      employeeSections += buildPartnerSection('Còn hiệu lực', empData.active, CONFIG.activeIcon, colors.activeTitle, 'active');
     }
     
     employeeSections += '</div>';
@@ -286,7 +285,7 @@ function buildEmailContent(employeeData, CONFIG, today) {
         <!-- Header -->
         <div style="text-align: center; margin-bottom: 48px;">
           <h1 style="margin: 0; font-size: 28px; font-weight: 300; color: ${colors.headerTitle}; letter-spacing: -0.5px;">
-            Báo cáo đối tác tuần
+            Báo cáo thống kê hợp đồng đối tác Referral
           </h1>
           <p style="margin: 8px 0 0; font-size: 16px; font-weight: 400; color: ${colors.headerSubtitle};">
             Phòng Kinh Doanh HMSG
